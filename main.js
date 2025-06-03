@@ -874,7 +874,7 @@ async function initApp() {
                 challengeModalEl.classList.remove('hidden');
                 acceptChallengeBtn.classList.remove('hidden');
                 declineChallengeBtn.classList.remove('hidden');
-                declineChallengeBtn.textContent = 'Decline';
+                declineChallengeBtn.textContent = 'Cancel Challenge';
             } else {
                 // Busy, auto-decline or ignore
                 room.requestPresenceUpdate(fromClientId, { type: 'CHALLENGE_DECLINED', reason: 'busy' });
@@ -990,5 +990,178 @@ async function initApp() {
                     username: room.peers[room.clientId].username, // ensure these are fresh
                     avatarUrl: room.peers[room.clientId].avatarUrl,
                  });
-            } else if (currentPresence.currentGameId && (!room.roomState.activeGames || !room.roomState.active
+            } else if (currentPresence.currentGameId && (!room.roomState.activeGames || !room.roomState.activeGames[currentPresence.currentGameId])) {
+                // This player was in a game upon reconnecting, but the game is no longer in activeGames.
+                // Reset their state to 'in_lobby'.
+                console.warn(`Player ${room.clientId} reconnected, was in game ${currentPresence.currentGameId}, but it's no longer active. Returning to lobby.`);
+                room.updatePresence({
+                    ...currentPresence,
+                    state: 'in_lobby',
+                    currentGameId: null,
+                    health: 100, // Reset health
+                    activeDecoyId: null, // Clear any active decoy
+                    // Reset position to a lobby default.
+                    x: GAME_WIDTH / 2, 
+                    y: GAME_HEIGHT - PLAYER_SIZE,
+                    username: room.peers[room.clientId].username, // Ensure username/avatar fresh
+                    avatarUrl: room.peers[room.clientId].avatarUrl,
+                });
+            }
+            // If the player reconnected and was in_game_player or in_game_spectator, 
+            // AND their currentGameId is valid in room.roomState.activeGames,
+            // their existing presence is largely kept. The GameScene loading or ongoing updates
+            // will handle their specific synchronization within the game.
+            // If their state was 'challenging' or 'challenged_by', it was already reset to 'in_lobby' above.
+        }
 
+        // Start Phaser game
+        phaserGame = new Phaser.Game(phaserConfig);
+        lobbyInfoEl.classList.remove('hidden'); // Show lobby UI by default
+        updateGameHudVisibility(false); // Hide game HUD
+
+    } catch (error) {
+        console.error("Initialization failed:", error);
+        connectionStatusEl.textContent = "Connection failed. Please refresh.";
+    }
+} // End of initApp async function
+
+// UI Event Listeners
+acceptChallengeBtn.addEventListener('click', () => {
+    if (currentChallenge && room.presence[room.clientId] && room.presence[room.clientId].state === 'challenged_by') {
+        const myId = room.clientId;
+        const challengerId = currentChallenge.fromId;
+        const gameId = `game_${myId}_${challengerId}_${Date.now()}`;
+
+        // Create the game in roomState
+        room.updateRoomState({
+            activeGames: {
+                ...(room.roomState.activeGames || {}), // Ensure activeGames object exists
+                [gameId]: {
+                    player1Id: challengerId, // Challenger is P1
+                    player2Id: myId,         // Acceptor is P2
+                    status: 'starting', // "starting", "active", "finished"
+                    winner: null,
+                    spectators: {}
+                }
+            }
+        });
+
+        // Update my presence to join the game
+        room.updatePresence({
+            ...room.presence[myId],
+            state: 'in_game_player',
+            currentGameId: gameId,
+            health: 100,
+            x: GAME_WIDTH * 0.75, y: GAME_HEIGHT - 150, // Initial pos for P2
+            velocityX: 0, velocityY: 0, isJumping: false, isDucking: false, facingDirection: "left", activeDecoyId: null
+        });
+
+        // Notify challenger that challenge was accepted
+        room.requestPresenceUpdate(challengerId, { type: 'CHALLENGE_ACCEPTED', gameId: gameId });
+
+        challengeModalEl.classList.add('hidden');
+        currentChallenge = null;
+        lobbyInfoEl.classList.add('hidden');
+        if(phaserGame.scene.isActive('LobbyScene')) phaserGame.scene.stop('LobbyScene');
+        phaserGame.scene.start('GameScene', { gameId: gameId });
+    }
+});
+
+declineChallengeBtn.addEventListener('click', () => {
+    const myPresence = room.presence[room.clientId];
+    if (!myPresence) return;
+
+    if (myPresence.state === 'challenged_by' && currentChallenge) { // I am declining a challenge
+        room.requestPresenceUpdate(currentChallenge.fromId, { type: 'CHALLENGE_DECLINED', reason: 'declined' });
+        room.updatePresence({ ...myPresence, state: 'in_lobby', challengedByWho: null });
+        challengeModalEl.classList.add('hidden');
+        currentChallenge = null;
+    } else if (myPresence.state === 'challenging' && myPresence.challengingWho) { // I am cancelling my challenge
+        // Optionally, notify the challenged player that the challenge was cancelled.
+        // room.requestPresenceUpdate(myPresence.challengingWho, { type: 'CHALLENGE_CANCELLED', fromId: room.clientId });
+        room.updatePresence({ ...myPresence, state: 'in_lobby', challengingWho: null });
+        challengeModalEl.classList.add('hidden');
+    }
+    // If it was a "declined" message (OK button on challenger's side), just hide modal and ensure lobby state
+    if (declineChallengeBtn.textContent === 'OK') {
+         challengeModalEl.classList.add('hidden');
+         if(myPresence.state === 'challenging'){ 
+            room.updatePresence({ ...myPresence, state: 'in_lobby', challengingWho: null });
+         }
+    }
+});
+
+returnToLobbyBtn.addEventListener('click', () => {
+    // This button is on the game over modal.
+    // The GameScene's returnToLobby method is the primary handler.
+    if (phaserGame && phaserGame.scene.isActive('GameScene')) {
+        const gameScene = phaserGame.scene.getScene('GameScene');
+        gameScene.returnToLobby();
+    } else if (phaserGame && phaserGame.scene.getScene('GameScene') && (phaserGame.scene.getScene('GameScene').scene.isPaused || !phaserGame.scene.isActive('LobbyScene'))) {
+        // If GameScene is paused or we're not in LobbyScene, try to force return to lobby.
+        const myPresence = room.presence[room.clientId];
+        if (myPresence) {
+             room.updatePresence({
+                ...myPresence,
+                state: 'in_lobby',
+                currentGameId: null,
+                health: 100, 
+                x: GAME_WIDTH / 2, 
+                y: GAME_HEIGHT - PLAYER_SIZE,
+                activeDecoyId: null,
+            });
+        }
+        updateGameHudVisibility(false);
+        gameOverModalEl.classList.add('hidden');
+        challengeModalEl.classList.add('hidden'); // Ensure challenge modal is also hidden
+        lobbyInfoEl.classList.remove('hidden');
+        
+        if(phaserGame.scene.getScene('GameScene')) phaserGame.scene.stop('GameScene'); // Stop GameScene if it exists
+        if(!phaserGame.scene.isActive('LobbyScene')) phaserGame.scene.start('LobbyScene'); // Start LobbyScene if not active
+    } else { // Fallback if game scene context is unusual
+        updateGameHudVisibility(false);
+        gameOverModalEl.classList.add('hidden');
+        lobbyInfoEl.classList.remove('hidden');
+        const myPresence = room.presence[room.clientId];
+        if (myPresence && (myPresence.state === 'in_game_player' || myPresence.state === 'in_game_spectator' || myPresence.state === 'challenging' || myPresence.state === 'challenged_by')) {
+            room.updatePresence({...myPresence, state: 'in_lobby', currentGameId: null, health: 100, x: GAME_WIDTH / 2, y: GAME_HEIGHT - PLAYER_SIZE, activeDecoyId: null});
+        }
+        if(phaserGame && !phaserGame.scene.isActive('LobbyScene')) {
+             if(phaserGame.scene.getScene('GameScene')) phaserGame.scene.stop('GameScene');
+            phaserGame.scene.start('LobbyScene');
+        }
+    }
+});
+
+
+function updateConnectionStatus() {
+    if (room && room.clientId && room.peers && room.peers[room.clientId]) {
+        connectionStatusEl.textContent = `Connected as ${room.peers[room.clientId].username}`;
+    } else {
+        connectionStatusEl.textContent = "Connecting...";
+    }
+}
+
+function updateGameHudVisibility(show) {
+    if (show) {
+        gameHudEl.classList.remove('hidden');
+        lobbyInfoEl.classList.add('hidden'); 
+    } else {
+        gameHudEl.classList.add('hidden');
+    }
+}
+
+
+// Global error handler
+window.addEventListener('error', function(event) {
+    console.error('Global error caught:', event.error, event.message, event.filename, event.lineno, event.colno);
+    // connectionStatusEl.textContent = "An error occurred. Please refresh.";
+});
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled promise rejection caught:', event.reason);
+    // connectionStatusEl.textContent = "An error occurred (promise). Please refresh.";
+});
+
+
+// Start the application
+initApp();

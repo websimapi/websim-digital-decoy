@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Decoy</title>
+    <script type="importmap">
+    {
+      "imports": {
+        "phaser": "https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="ui-overlay">
+        <div id="connection-status">Connecting to server...</div>
+        <div id="lobby-info" class="hidden">
+            <h2>Lobby</h2>
+            <p>Players online: <span id="player-count">0</span></p>
+            <p>Your controls: WASD/Space to move/jump. Click a player to challenge.</p>
+            <div id="active-games-list">
+                <h3>Active Games:</h3>
+                <ul></ul>
+            </div>
+        </div>
+        <div id="challenge-modal" class="modal hidden">
+            <p id="challenge-message"></p>
+            <button id="accept-challenge">Accept</button>
+            <button id="decline-challenge">Decline</button>
+        </div>
+        <div id="game-hud" class="hidden">
+            <div id="player1-hud">
+                <img id="player1-avatar-hud" src="" alt="P1 Avatar" class="hud-avatar">
+                <span id="player1-name-hud">Player 1</span>: <span id="player1-health-hud">100</span>HP
+            </div>
+            <div id="player2-hud">
+                <img id="player2-avatar-hud" src="" alt="P2 Avatar" class="hud-avatar">
+                <span id="player2-name-hud">Player 2</span>: <span id="player2-health-hud">100</span>HP
+            </div>
+            <p>Controls: WASD/Space - Move/Jump, E - Decoy, F - Attack</p>
+        </div>
+        <div id="game-over-modal" class="modal hidden">
+            <h2 id="game-over-message"></h2>
+            <button id="return-to-lobby">Return to Lobby</button>
+        </div>
+    </div>
+    <script src="main.js" type="module"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+

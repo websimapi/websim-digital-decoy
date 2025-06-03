@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
